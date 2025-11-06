@@ -30,5 +30,7 @@
 	<string>MacAppSwitcher needs Apple Events access to activate and switch between applications.</string>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>MacAppSwitcher needs Accessibility access to register global hotkeys and track application activation.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>MacAppSwitcher needs Screen Recording permission to capture window thumbnails for the switcher preview.</string>
 </dict>
 </plist>
