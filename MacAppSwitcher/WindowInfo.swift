@@ -49,22 +49,87 @@ struct WindowInfo: Hashable {
     /// Captures a thumbnail image of this window
     /// - Returns: NSImage of the window, or nil if capture fails
     func captureThumbnail() -> NSImage? {
-        // Note: Window capture APIs are deprecated in macOS 15.0+
-        // Apple recommends using ScreenCaptureKit, but it requires:
-        // - Async/await patterns
-        // - More complex permission handling
-        // - Significant refactoring
-        //
-        // For now, we return a visually appealing representation using the app icon
-        // This provides a good user experience while avoiding deprecated APIs
-        //
-        // Future improvement: Implement ScreenCaptureKit for actual window thumbnails
+        // Even though CGWindowListCreateImage is deprecated in macOS 15.0+,
+        // it still works and is the simplest way to capture window screenshots.
+        // We'll use it with @available checks disabled for now.
 
+        // Try to capture the actual window screenshot
+        if let screenshot = captureWindowScreenshot() {
+            return screenshot
+        }
+
+        // Fallback to placeholder if screenshot fails
         return createPlaceholderThumbnail()
     }
 
+    /// Captures actual window screenshot using CGWindowListCreateImage
+    /// This API is deprecated but still functional in macOS 15
+    private func captureWindowScreenshot() -> NSImage? {
+        print("🔍 Attempting to capture screenshot for window ID: \(windowID)")
+
+        // Create a CGImage of just this window
+        let windowImage = createWindowImage(windowID)
+
+        guard let cgImage = windowImage else {
+            print("⚠️ Failed to capture window \(windowID) - createWindowImage returned nil")
+            print("   This usually means Screen Recording permission is not granted")
+            return nil
+        }
+
+        print("✅ Successfully captured window \(windowID) - size: \(cgImage.width)x\(cgImage.height)")
+
+        // Convert to NSImage
+        let size = NSSize(width: cgImage.width, height: cgImage.height)
+        return NSImage(cgImage: cgImage, size: size)
+    }
+
+    /// Creates a CGImage from a window ID using the deprecated but functional API
+    private func createWindowImage(_ windowID: CGWindowID) -> CGImage? {
+        // Import the function from the C library
+        // This is a workaround to use the deprecated CGWindowListCreateImage
+
+        // Define the function signature
+        typealias CGWindowListCreateImageFunc = @convention(c) (
+            CGRect,
+            CGWindowListOption,
+            CGWindowID,
+            CGWindowImageOption
+        ) -> CGImage?
+
+        // Get the function pointer using dlsym
+        let RTLD_DEFAULT = UnsafeMutableRawPointer(bitPattern: -2)
+        guard let functionPointer = dlsym(RTLD_DEFAULT, "CGWindowListCreateImage") else {
+            print("❌ Failed to load CGWindowListCreateImage function")
+            return nil
+        }
+
+        // Cast to the function type
+        let createImageFunc = unsafeBitCast(functionPointer, to: CGWindowListCreateImageFunc.self)
+
+        // Call the function
+        // CGRect.null means capture the entire window bounds
+        // .optionIncludingWindow means include only this specific window
+        // .bestResolution gives us the highest quality image
+        let image = createImageFunc(
+            CGRect.null,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, .bestResolution]
+        )
+
+        if image == nil {
+            print("❌ CGWindowListCreateImage returned nil for window \(windowID)")
+            print("   Possible causes:")
+            print("   1. Screen Recording permission not granted")
+            print("   2. Window may be hidden or minimized")
+            print("   3. Invalid window ID")
+        }
+
+        return image
+    }
+
     /// Creates a placeholder thumbnail with app icon and gradient
-    /// Used instead of window screenshots to avoid deprecated APIs
+    /// Used as fallback when screenshot capture fails
     private func createPlaceholderThumbnail() -> NSImage? {
         let size = NSSize(width: 280, height: 210)
         let image = NSImage(size: size)

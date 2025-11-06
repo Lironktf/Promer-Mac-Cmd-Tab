@@ -240,14 +240,16 @@ class WindowPreviewView: NSView {
             addSubview(iconView)
         }
 
-        // Title label
-        titleLabel = NSTextField(labelWithString: windowInfo.title.isEmpty ? windowInfo.appName : windowInfo.title)
+        // Title label - with proper wrapping
+        let titleText = windowInfo.title.isEmpty ? windowInfo.appName : windowInfo.title
+        titleLabel = NSTextField(wrappingLabelWithString: titleText)
         titleLabel?.frame = NSRect(x: 10, y: 20, width: 140, height: 40)
         titleLabel?.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         titleLabel?.textColor = .white
         titleLabel?.alignment = .center
-        titleLabel?.lineBreakMode = .byTruncatingTail
+        titleLabel?.lineBreakMode = .byWordWrapping
         titleLabel?.maximumNumberOfLines = 2
+        titleLabel?.usesSingleLineMode = false
         if let label = titleLabel {
             addSubview(label)
         }

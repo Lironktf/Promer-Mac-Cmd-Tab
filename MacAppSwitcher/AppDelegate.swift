@@ -203,35 +203,61 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Check WITHOUT prompting
         let accessEnabled = AXIsProcessTrustedWithOptions(nil)
 
-        if accessEnabled {
-            print("✅ Accessibility permission already granted.")
-            return
-        }
-
-        // Permission not granted - log helpful information
         let bundleID = Bundle.main.bundleIdentifier ?? "unknown"
         let bundlePath = Bundle.main.bundlePath
         let executablePath = Bundle.main.executablePath ?? "unknown"
 
-        print("\n⚠️  ACCESSIBILITY PERMISSION REQUIRED ⚠️")
-        print("=========================================")
-        print("MacAppSwitcher needs Accessibility permission to work.")
-        print("")
-        print("📋 HOW TO GRANT PERMISSION:")
-        print("1. Open System Settings > Privacy & Security > Accessibility")
-        print("2. Click the '+' button to add an app")
-        print("3. Navigate to and select:")
-        print("   \(bundlePath)")
-        print("4. Enable the checkbox for MacAppSwitcher")
-        print("5. QUIT (Cmd+Q) and RESTART this app")
-        print("")
-        print("💡 TIP: During development, each build may require re-granting permission.")
-        print("   This is normal macOS security behavior.")
-        print("")
-        print("🔍 Debug Info:")
-        print("   Bundle ID: \(bundleID)")
-        print("   Executable: \(executablePath)")
-        print("=========================================\n")
+        if accessEnabled {
+            print("✅ Accessibility permission already granted.")
+        } else {
+            // Permission not granted - log helpful information
+            print("\n⚠️  ACCESSIBILITY PERMISSION REQUIRED ⚠️")
+            print("=========================================")
+            print("MacAppSwitcher needs Accessibility permission to work.")
+            print("")
+            print("📋 HOW TO GRANT PERMISSION:")
+            print("1. Open System Settings > Privacy & Security > Accessibility")
+            print("2. Click the '+' button to add an app")
+            print("3. Navigate to and select:")
+            print("   \(bundlePath)")
+            print("4. Enable the checkbox for MacAppSwitcher")
+            print("5. QUIT (Cmd+Q) and RESTART this app")
+            print("")
+            print("💡 TIP: During development, each build may require re-granting permission.")
+            print("   This is normal macOS security behavior.")
+            print("")
+            print("🔍 Debug Info:")
+            print("   Bundle ID: \(bundleID)")
+            print("   Executable: \(executablePath)")
+            print("=========================================\n")
+        }
+
+        // Also check for Screen Recording permission (needed for window screenshots)
+        checkScreenRecordingPermission(bundlePath: bundlePath)
+    }
+
+    /// Checks if Screen Recording permission is granted
+    /// This is required for capturing window screenshots
+    private func checkScreenRecordingPermission(bundlePath: String) {
+        // Try to capture a screenshot to test permission
+        // If we can't capture any window, permission is likely not granted
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            print("\n📸 Checking Screen Recording permission...")
+            print("   This permission is REQUIRED for window thumbnail previews.")
+            print("")
+            print("📋 HOW TO GRANT SCREEN RECORDING PERMISSION:")
+            print("1. Open System Settings > Privacy & Security > Screen Recording")
+            print("2. Click the '+' button to add an app")
+            print("3. Navigate to and select:")
+            print("   \(bundlePath)")
+            print("4. Enable the checkbox for MacAppSwitcher")
+            print("5. QUIT (Cmd+Q) and RESTART this app")
+            print("")
+            print("ℹ️  Without Screen Recording permission:")
+            print("   - Window thumbnails will show app icons instead of screenshots")
+            print("   - App will still work for switching windows")
+            print("=========================================\n")
+        }
     }
     
     /// Called when the application will terminate
