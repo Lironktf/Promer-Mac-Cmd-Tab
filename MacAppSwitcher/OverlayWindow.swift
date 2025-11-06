@@ -32,10 +32,8 @@ class OverlayWindow {
     func show(with windows: [WindowInfo]) {
         currentWindows = windows
 
-        // Create window if it doesn't exist
-        if window == nil {
-            createWindow()
-        }
+        // Recreate window with proper size for number of windows
+        createWindow(for: windows.count)
 
         // Update the display with current windows
         updateWindowPreviews(with: windows)
@@ -82,10 +80,16 @@ class OverlayWindow {
 
     /// Creates the overlay window with appropriate properties
     /// Configures the window to be floating, semi-transparent, and non-activating
-    private func createWindow() {
-        // Window dimensions - larger to accommodate thumbnails
-        let windowWidth: CGFloat = 900
-        let windowHeight: CGFloat = 260
+    /// - Parameter windowCount: Number of windows to display (adjusts size accordingly)
+    private func createWindow(for windowCount: Int = 5) {
+        // Calculate window width based on number of windows
+        // Each card is 216px wide, spacing is 25px
+        let cardWidth: CGFloat = 216
+        let spacing: CGFloat = 25
+        let sidePadding: CGFloat = 80
+
+        let windowWidth = CGFloat(windowCount) * cardWidth + CGFloat(windowCount - 1) * spacing + sidePadding
+        let windowHeight: CGFloat = 280
 
         // Create window with specific style
         let windowRect = NSRect(
@@ -104,8 +108,8 @@ class OverlayWindow {
 
         guard let window = window else { return }
 
-        // Configure window properties
-        window.backgroundColor = NSColor.black.withAlphaComponent(0.85)
+        // Configure window properties with backdrop blur
+        window.backgroundColor = NSColor.black.withAlphaComponent(0.75)
         window.isOpaque = false
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -115,19 +119,30 @@ class OverlayWindow {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
 
-        // Create content view with rounded corners
+        // Create content view with rounded corners and blur effect
         let contentView = NSView(frame: windowRect)
         contentView.wantsLayer = true
-        contentView.layer?.cornerRadius = 16
+        contentView.layer?.cornerRadius = 20
         contentView.layer?.masksToBounds = true
+
+        // Add visual effect view for backdrop blur
+        let blurView = NSVisualEffectView(frame: windowRect)
+        blurView.material = .hudWindow
+        blurView.state = .active
+        blurView.blendingMode = .behindWindow
+        blurView.wantsLayer = true
+        blurView.layer?.cornerRadius = 20
+        blurView.layer?.masksToBounds = true
+        contentView.addSubview(blurView, positioned: .below, relativeTo: nil)
+
         window.contentView = contentView
 
-        // Create stack view for horizontal layout
+        // Create stack view for horizontal layout - well centered with proper padding
         let stackViewRect = NSRect(
-            x: 30,
-            y: 20,
-            width: windowWidth - 60,
-            height: windowHeight - 40
+            x: 40,
+            y: 30,
+            width: windowWidth - 80,
+            height: windowHeight - 60
         )
 
         stackView = NSStackView(frame: stackViewRect)
@@ -135,7 +150,7 @@ class OverlayWindow {
 
         stackView.orientation = .horizontal
         stackView.distribution = .fillEqually
-        stackView.spacing = 20
+        stackView.spacing = 25
         stackView.alignment = .centerY
 
         contentView.addSubview(stackView)
@@ -189,35 +204,46 @@ class WindowPreviewView: NSView {
 
     private func setupView() {
         wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.backgroundColor = NSColor.darkGray.withAlphaComponent(0.3).cgColor
+        layer?.cornerRadius = 12
+        layer?.backgroundColor = NSColor.darkGray.withAlphaComponent(0.25).cgColor
 
-        // Selection border (hidden by default)
+        // Selection border (hidden by default) with glow effect
         selectionBorder = NSBox(frame: bounds)
         selectionBorder?.boxType = .custom
         selectionBorder?.borderType = .lineBorder
         selectionBorder?.borderColor = NSColor.systemBlue
-        selectionBorder?.borderWidth = 3
-        selectionBorder?.cornerRadius = 8
+        selectionBorder?.borderWidth = 4
+        selectionBorder?.cornerRadius = 12
         selectionBorder?.fillColor = .clear
         selectionBorder?.isHidden = true
         selectionBorder?.autoresizingMask = [.width, .height]
+        selectionBorder?.wantsLayer = true
+        selectionBorder?.layer?.shadowColor = NSColor.systemBlue.cgColor
+        selectionBorder?.layer?.shadowOpacity = 0.8
+        selectionBorder?.layer?.shadowOffset = .zero
+        selectionBorder?.layer?.shadowRadius = 8
         if let border = selectionBorder {
             addSubview(border)
         }
 
-        // Thumbnail image view (window screenshot)
-        thumbnailImageView = NSImageView(frame: NSRect(x: 10, y: 50, width: 140, height: 105))
+        // Thumbnail image view (window screenshot) - properly scaled and centered
+        thumbnailImageView = NSImageView(frame: NSRect(x: 8, y: 50, width: 200, height: 155))
         thumbnailImageView?.imageScaling = .scaleProportionallyUpOrDown
+        thumbnailImageView?.imageAlignment = .alignCenter
+        thumbnailImageView?.imageFrameStyle = .none
         thumbnailImageView?.wantsLayer = true
-        thumbnailImageView?.layer?.cornerRadius = 4
+        thumbnailImageView?.layer?.cornerRadius = 8
         thumbnailImageView?.layer?.masksToBounds = true
-        thumbnailImageView?.layer?.borderColor = NSColor.gray.withAlphaComponent(0.5).cgColor
+        thumbnailImageView?.layer?.borderColor = NSColor.gray.withAlphaComponent(0.4).cgColor
         thumbnailImageView?.layer?.borderWidth = 1
+        thumbnailImageView?.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.4).cgColor
 
-        // Capture thumbnail
+        // Capture thumbnail and resize it properly
         if let thumbnail = windowInfo.captureThumbnail() {
-            thumbnailImageView?.image = thumbnail
+            // Create a properly sized version that fits the thumbnail area
+            let targetSize = NSSize(width: 200, height: 155)
+            let resizedImage = resizeImageToFit(thumbnail, targetSize: targetSize)
+            thumbnailImageView?.image = resizedImage
         } else {
             // Fallback: show app icon if thumbnail fails
             thumbnailImageView?.image = windowInfo.app.icon
@@ -228,24 +254,28 @@ class WindowPreviewView: NSView {
         }
 
         // App icon (small, overlaid on bottom-left of thumbnail)
-        iconImageView = NSImageView(frame: NSRect(x: 15, y: 55, width: 24, height: 24))
+        iconImageView = NSImageView(frame: NSRect(x: 14, y: 56, width: 32, height: 32))
         iconImageView?.image = windowInfo.app.icon
-        iconImageView?.imageScaling = .scaleProportionallyUpOrDown
+        iconImageView?.imageScaling = .scaleProportionallyDown
         iconImageView?.wantsLayer = true
-        iconImageView?.layer?.cornerRadius = 4
+        iconImageView?.layer?.cornerRadius = 6
         iconImageView?.layer?.masksToBounds = true
         iconImageView?.layer?.borderColor = NSColor.black.cgColor
-        iconImageView?.layer?.borderWidth = 1
+        iconImageView?.layer?.borderWidth = 2
+        iconImageView?.layer?.shadowColor = NSColor.black.cgColor
+        iconImageView?.layer?.shadowOpacity = 0.6
+        iconImageView?.layer?.shadowOffset = NSSize(width: 0, height: -2)
+        iconImageView?.layer?.shadowRadius = 3
         if let iconView = iconImageView {
             addSubview(iconView)
         }
 
-        // Title label - with proper wrapping
+        // Title label - ALL WHITE TEXT, larger font, proper wrapping
         let titleText = windowInfo.title.isEmpty ? windowInfo.appName : windowInfo.title
         titleLabel = NSTextField(wrappingLabelWithString: titleText)
-        titleLabel?.frame = NSRect(x: 10, y: 20, width: 140, height: 40)
-        titleLabel?.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        titleLabel?.textColor = .white
+        titleLabel?.frame = NSRect(x: 8, y: 12, width: 200, height: 32)
+        titleLabel?.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        titleLabel?.textColor = .white  // Always white!
         titleLabel?.alignment = .center
         titleLabel?.lineBreakMode = .byWordWrapping
         titleLabel?.maximumNumberOfLines = 2
@@ -253,32 +283,70 @@ class WindowPreviewView: NSView {
         if let label = titleLabel {
             addSubview(label)
         }
-
-        // App name label (smaller, below title)
-        let appLabel = NSTextField(labelWithString: windowInfo.appName)
-        appLabel.frame = NSRect(x: 10, y: 5, width: 140, height: 14)
-        appLabel.font = NSFont.systemFont(ofSize: 9, weight: .regular)
-        appLabel.textColor = NSColor.white.withAlphaComponent(0.7)
-        appLabel.alignment = .center
-        appLabel.lineBreakMode = .byTruncatingTail
-        addSubview(appLabel)
     }
 
     func setSelected(_ selected: Bool) {
         selectionBorder?.isHidden = !selected
 
         if selected {
-            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.2).cgColor
-            titleLabel?.textColor = .yellow
-            titleLabel?.font = NSFont.systemFont(ofSize: 12, weight: .bold)
+            // Selected: blue glow, bold white text, brighter background
+            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.15).cgColor
+            titleLabel?.textColor = .white  // Keep white, not yellow!
+            titleLabel?.font = NSFont.systemFont(ofSize: 13, weight: .bold)
+
+            // Add subtle scale effect
+            layer?.transform = CATransform3DMakeScale(1.02, 1.02, 1.0)
         } else {
-            layer?.backgroundColor = NSColor.darkGray.withAlphaComponent(0.3).cgColor
-            titleLabel?.textColor = .white
-            titleLabel?.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+            // Not selected: darker background, regular white text
+            layer?.backgroundColor = NSColor.darkGray.withAlphaComponent(0.25).cgColor
+            titleLabel?.textColor = .white  // Always white
+            titleLabel?.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+
+            // Reset scale
+            layer?.transform = CATransform3DIdentity
         }
     }
 
     override var intrinsicContentSize: NSSize {
-        return NSSize(width: 160, height: 200)
+        return NSSize(width: 216, height: 220)  // 35% larger
+    }
+
+    /// Resizes an image to fit within target size while maintaining aspect ratio
+    private func resizeImageToFit(_ image: NSImage, targetSize: NSSize) -> NSImage {
+        let sourceSize = image.size
+
+        // Calculate aspect ratios
+        let sourceAspect = sourceSize.width / sourceSize.height
+        let targetAspect = targetSize.width / targetSize.height
+
+        var newSize: NSSize
+
+        if sourceAspect > targetAspect {
+            // Image is wider - fit to width
+            newSize = NSSize(
+                width: targetSize.width,
+                height: targetSize.width / sourceAspect
+            )
+        } else {
+            // Image is taller - fit to height
+            newSize = NSSize(
+                width: targetSize.height * sourceAspect,
+                height: targetSize.height
+            )
+        }
+
+        // Create new image with proper size
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+
+        image.draw(
+            in: NSRect(origin: .zero, size: newSize),
+            from: NSRect(origin: .zero, size: sourceSize),
+            operation: .copy,
+            fraction: 1.0
+        )
+
+        newImage.unlockFocus()
+        return newImage
     }
 }

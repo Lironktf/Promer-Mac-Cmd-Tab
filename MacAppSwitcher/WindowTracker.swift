@@ -25,8 +25,14 @@ class WindowTracker {
     /// Reference to the workspace notification observer for app activation
     private var appActivationObserver: NSObjectProtocol?
 
+    /// Reference to the workspace notification observer for app termination
+    private var appTerminationObserver: NSObjectProtocol?
+
     /// Timer to periodically poll for window changes (fallback)
     private var pollTimer: Timer?
+
+    /// Timer to periodically clean up stale windows
+    private var cleanupTimer: Timer?
 
     /// Last known frontmost window to detect changes
     private var lastFrontmostWindow: WindowInfo?
@@ -53,10 +59,29 @@ class WindowTracker {
             }
         }
 
+        // Register for application termination notifications
+        appTerminationObserver = NotificationCenter.default.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: workspace,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self else { return }
+
+            // When an app terminates, remove all its windows from MRU
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                self.removeWindowsForApp(app)
+            }
+        }
+
         // Start polling timer to detect window switches within the same app
         // This is necessary because macOS doesn't provide reliable window focus notifications
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.pollForWindowChanges()
+        }
+
+        // Start cleanup timer to remove stale/closed windows
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.cleanupStaleWindows()
         }
 
         // Initial population with current frontmost window
@@ -165,13 +190,66 @@ class WindowTracker {
     }
 
     /// Returns the top N windows from the MRU stack
+    /// Filters out windows that are no longer valid (closed or terminated)
     /// - Parameter count: Number of windows to return
     /// - Returns: Array of WindowInfo instances, most recent first
     func getTopWindows(count: Int = 5) -> [WindowInfo] {
         lock.lock()
         defer { lock.unlock() }
 
-        return Array(mruStack.prefix(count))
+        // Filter out invalid windows before returning
+        let validWindows = mruStack.filter { isWindowValid($0) }
+        return Array(validWindows.prefix(count))
+    }
+
+    /// Removes all windows belonging to a terminated application
+    /// - Parameter app: The application that terminated
+    private func removeWindowsForApp(_ app: NSRunningApplication) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let beforeCount = mruStack.count
+        mruStack.removeAll { $0.app.processIdentifier == app.processIdentifier }
+        let removedCount = beforeCount - mruStack.count
+
+        if removedCount > 0 {
+            print("🗑️ WindowTracker: Removed \(removedCount) window(s) for terminated app: \(app.localizedName ?? "Unknown")")
+        }
+    }
+
+    /// Periodically cleans up stale/closed windows from the MRU stack
+    private func cleanupStaleWindows() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let beforeCount = mruStack.count
+        mruStack.removeAll { !isWindowValid($0) }
+        let removedCount = beforeCount - mruStack.count
+
+        if removedCount > 0 {
+            print("🧹 WindowTracker: Cleaned up \(removedCount) stale window(s)")
+        }
+    }
+
+    /// Checks if a window is still valid (app running and window exists)
+    /// - Parameter window: The window to check
+    /// - Returns: true if window is valid, false otherwise
+    private func isWindowValid(_ window: WindowInfo) -> Bool {
+        // Check if app is still running
+        if window.app.isTerminated {
+            return false
+        }
+
+        // Try to access the window through Accessibility API
+        // If we can't get any attribute, the window is likely closed
+        var existsRef: AnyObject?
+        let result = AXUIElementCopyAttributeValue(
+            window.axWindow,
+            kAXRoleAttribute as CFString,
+            &existsRef
+        )
+
+        return result == .success
     }
 
     /// Activates a specific window
@@ -200,7 +278,11 @@ class WindowTracker {
     /// Cleans up observers and timers
     deinit {
         pollTimer?.invalidate()
+        cleanupTimer?.invalidate()
         if let observer = appActivationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = appTerminationObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
