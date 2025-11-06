@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Disable App Sandbox entirely for CGEventTap to work -->
+	<!-- CGEventTap requires direct access to system events which is incompatible with sandboxing -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+
+	<!-- Allow JIT compilation (may be needed for some Swift optimizations) -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+
+	<!-- Allow unsigned executable memory (needed for CGEventTap callback) -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>
