@@ -2,90 +2,89 @@
 //  OverlayWindow.swift
 //  MacAppSwitcher
 //
-//  Creates and manages the overlay window that displays the app switcher UI.
-//  Shows a semi-transparent, centered, floating window with application names
+//  Creates and manages the overlay window that displays the window switcher UI.
+//  Shows a semi-transparent, centered, floating window with window titles
 //  in a horizontal layout. Highlights the current selection in yellow.
 //
 
 import Cocoa
 
-/// Manages the overlay window that displays the app switcher interface
-/// Creates a floating, semi-transparent window with application names
-/// arranged horizontally, highlighting the currently selected app.
+/// Manages the overlay window that displays the window switcher interface
+/// Creates a floating, semi-transparent window with window titles (App - Title)
+/// arranged horizontally, highlighting the currently selected window.
 class OverlayWindow {
     /// The overlay window instance
     private var window: NSWindow?
-    
-    /// Stack view containing the application name labels
+
+    /// Stack view containing the window title labels
     private var stackView: NSStackView?
-    
-    /// Array of labels displaying application names
-    private var appLabels: [NSTextField] = []
-    
+
+    /// Array of labels displaying window titles
+    private var windowLabels: [NSTextField] = []
+
     /// Currently selected index (highlighted in yellow)
     private var selectedIndex: Int = 0
-    
-    /// Currently displayed applications
-    private var currentApps: [NSRunningApplication] = []
-    
-    /// Shows the overlay window with the provided applications
-    /// - Parameter apps: Array of applications to display (up to 5)
-    func show(with apps: [NSRunningApplication]) {
-        currentApps = apps
+
+    /// Currently displayed windows
+    private var currentWindows: [WindowInfo] = []
+
+    /// Shows the overlay window with the provided windows
+    /// - Parameter windows: Array of windows to display (up to 5)
+    func show(with windows: [WindowInfo]) {
+        currentWindows = windows
         
         // Create window if it doesn't exist
         if window == nil {
             createWindow()
         }
-        
-        // Update the display with current applications
-        updateAppLabels(with: apps)
-        
-        // Reset selection to first app
+
+        // Update the display with current windows
+        updateWindowLabels(with: windows)
+
+        // Reset selection to first window
         selectedIndex = 0
         updateHighlight()
-        
+
         // Show and center the window
         window?.center()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
-    
+
     /// Hides the overlay window
     func hide() {
         window?.orderOut(nil)
     }
-    
-    /// Cycles to the next application in the list
+
+    /// Cycles to the next window in the list
     /// Wraps around to the beginning when reaching the end
     func selectNext() {
-        guard !currentApps.isEmpty else { return }
-        selectedIndex = (selectedIndex + 1) % currentApps.count
+        guard !currentWindows.isEmpty else { return }
+        selectedIndex = (selectedIndex + 1) % currentWindows.count
         updateHighlight()
     }
-    
-    /// Cycles to the previous application in the list
+
+    /// Cycles to the previous window in the list
     /// Wraps around to the end when reaching the beginning
     func selectPrevious() {
-        guard !currentApps.isEmpty else { return }
-        selectedIndex = (selectedIndex - 1 + currentApps.count) % currentApps.count
+        guard !currentWindows.isEmpty else { return }
+        selectedIndex = (selectedIndex - 1 + currentWindows.count) % currentWindows.count
         updateHighlight()
     }
-    
-    /// Gets the currently selected application
-    /// - Returns: The selected NSRunningApplication, or nil if none selected
-    func getSelectedApp() -> NSRunningApplication? {
-        guard selectedIndex >= 0 && selectedIndex < currentApps.count else {
+
+    /// Gets the currently selected window
+    /// - Returns: The selected WindowInfo, or nil if none selected
+    func getSelectedWindow() -> WindowInfo? {
+        guard selectedIndex >= 0 && selectedIndex < currentWindows.count else {
             return nil
         }
-        return currentApps[selectedIndex]
+        return currentWindows[selectedIndex]
     }
     
     /// Creates the overlay window with appropriate properties
     /// Configures the window to be floating, semi-transparent, and non-activating
     private func createWindow() {
-        // Calculate window size based on screen dimensions
-        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        // Window dimensions
         let windowWidth: CGFloat = 600
         let windowHeight: CGFloat = 120
         
@@ -143,35 +142,33 @@ class OverlayWindow {
         contentView.addSubview(stackView)
     }
     
-    /// Updates the labels displaying application names
-    /// - Parameter apps: Array of applications to display
-    private func updateAppLabels(with apps: [NSRunningApplication]) {
+    /// Updates the labels displaying window titles
+    /// - Parameter windows: Array of windows to display
+    private func updateWindowLabels(with windows: [WindowInfo]) {
         guard let stackView = stackView else { return }
-        
+
         // Remove existing labels
-        appLabels.forEach { $0.removeFromSuperview() }
-        appLabels.removeAll()
-        
-        // Create labels for each application
-        for app in apps {
-            let label = createAppLabel(for: app)
-            appLabels.append(label)
+        windowLabels.forEach { $0.removeFromSuperview() }
+        windowLabels.removeAll()
+
+        // Create labels for each window
+        for window in windows {
+            let label = createWindowLabel(for: window)
+            windowLabels.append(label)
             stackView.addView(label, in: .leading)
         }
-        
+
         // Update stack view layout
         stackView.needsLayout = true
     }
-    
-    /// Creates a label for an application name
-    /// - Parameter app: The application to create a label for
-    /// - Returns: Configured NSTextField displaying the app name
-    private func createAppLabel(for app: NSRunningApplication) -> NSTextField {
-        // Get application name, fallback to bundle identifier if name is unavailable
-        let appName = app.localizedName ?? app.bundleIdentifier ?? "Unknown App"
-        
-        let label = NSTextField(labelWithString: appName)
-        label.font = NSFont.systemFont(ofSize: 18, weight: .medium)
+
+    /// Creates a label for a window
+    /// - Parameter window: The window to create a label for
+    /// - Returns: Configured NSTextField displaying "App - Title"
+    private func createWindowLabel(for window: WindowInfo) -> NSTextField {
+        // Use the displayName which formats as "App - Title"
+        let label = NSTextField(labelWithString: window.displayName)
+        label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         label.textColor = .white // Default white color
         label.alignment = .center
         label.isEditable = false
@@ -179,22 +176,24 @@ class OverlayWindow {
         label.isBordered = false
         label.backgroundColor = .clear
         label.wantsLayer = true
-        
+        label.lineBreakMode = .byTruncatingMiddle // Truncate long titles in the middle
+        label.maximumNumberOfLines = 2 // Allow wrapping to 2 lines
+
         return label
     }
-    
-    /// Updates the highlight to show the currently selected application
-    /// Selected app is highlighted in yellow, others remain white
+
+    /// Updates the highlight to show the currently selected window
+    /// Selected window is highlighted in yellow, others remain white
     private func updateHighlight() {
-        for (index, label) in appLabels.enumerated() {
+        for (index, label) in windowLabels.enumerated() {
             if index == selectedIndex {
-                // Highlight selected app in yellow
+                // Highlight selected window in yellow
                 label.textColor = .yellow
-                label.font = NSFont.systemFont(ofSize: 20, weight: .bold)
+                label.font = NSFont.systemFont(ofSize: 16, weight: .bold)
             } else {
-                // Other apps remain white
+                // Other windows remain white
                 label.textColor = .white
-                label.font = NSFont.systemFont(ofSize: 18, weight: .medium)
+                label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
             }
         }
     }
