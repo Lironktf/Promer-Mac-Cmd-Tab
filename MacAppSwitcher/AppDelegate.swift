@@ -4,7 +4,7 @@
 //
 //  Main application delegate that coordinates all components:
 //  - WindowTracker: Tracks MRU windows (not just apps)
-//  - HotkeyManager: Registers Control+Tab hotkey
+//  - HotkeyManager: Registers Command+~ hotkey
 //  - OverlayWindow: Displays the window switcher UI
 //  Handles the app lifecycle and coordinates interactions between components.
 //
@@ -18,7 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Tracks recently focused windows and maintains MRU stack
     private var windowTracker: WindowTracker?
     
-    /// Manages global hotkey registration for Control+Tab
+    /// Manages global hotkey registration for Command+~
     private var hotkeyManager: HotkeyManager?
     
     /// Displays the overlay window with application names
@@ -52,11 +52,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Request accessibility permissions (required for global hotkeys)
         requestAccessibilityPermissions()
         
-        print("MacAppSwitcher started. Press Control+Tab to switch applications.")
+        print("MacAppSwitcher started. Press Command+~ to switch windows.")
     }
     
-    /// Handles the Control+Tab key press event
-    /// Shows the overlay window with the top 5 recently used windows
+    /// Handles the Command+~ key press event
+    /// Shows the overlay window with recently used windows
     /// If overlay is already visible, cycles to the next window
     private func handleHotkeyPressed() {
         guard let windowTracker = windowTracker,
@@ -69,8 +69,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             overlayWindow.selectNext()
         } else {
             // First press - show overlay with windows
-            // Get top windows from the tracker
-            let windows = windowTracker.getTopWindows(count: 6)
+            // Get top windows from the tracker (fetch up to 10 for multi-row display)
+            let windows = windowTracker.getTopWindows(count: 10)
 
             guard !windows.isEmpty else {
                 // No windows to switch to
@@ -78,22 +78,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            // Show overlay with windows (limit to 5)
-            let displayWindows = Array(windows.prefix(5))
-            overlayWindow.show(with: displayWindows)
+            // Show overlay with all windows (supports multi-row layout)
+            overlayWindow.show(with: windows)
             isOverlayVisible = true
 
             // On first press, we want to select index 1 (second window in the list)
             // because index 0 is the most recently used window (the one we're switching FROM)
             // This matches Windows Alt+Tab behavior where the first Tab press
             // selects the previous window, not the current one
-            if displayWindows.count > 1 {
+            if windows.count > 1 {
                 overlayWindow.selectNext()
             }
         }
     }
     
-    /// Handles the Control+Tab key release event
+    /// Handles the Command+~ key release event
     /// Activates the selected window and hides the overlay
     private func handleHotkeyReleased() {
         guard let windowTracker = windowTracker,
@@ -122,7 +121,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "command.tab.fill", accessibilityDescription: "MacAppSwitcher")
             button.image?.isTemplate = true // Allows system tinting
-            button.toolTip = "MacAppSwitcher - Press Control+Tab to switch apps"
+            button.toolTip = "MacAppSwitcher - Press Command+~ to switch windows"
         }
         
         // Create menu for status item
@@ -151,7 +150,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = "MacAppSwitcher"
-        alert.informativeText = "A macOS window switcher that mimics Windows' Alt+Tab functionality.\n\nPress Control+Tab to switch between recently used windows (including multiple windows of the same app)."
+        alert.informativeText = "A macOS window switcher that mimics Windows' Alt+Tab functionality.\n\nPress Command+~ to switch between recently used windows (including multiple windows of the same app)."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()

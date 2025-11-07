@@ -3,7 +3,7 @@
 //  MacAppSwitcher
 //
 //  Manages global hotkey registration using CGEventTap API.
-//  Registers Control+Tab hotkey and handles key down/up events.
+//  Registers Command+~ (tilde) hotkey and handles key down/up events.
 //  Uses CGEventTap for reliable detection of modifier key changes.
 //
 
@@ -13,34 +13,34 @@ import ApplicationServices
 
 /// Manages global hotkey registration and event handling
 /// Uses CGEventTap API to monitor keyboard events system-wide
-/// and detect Control+Tab key combinations, including modifier key releases.
+/// and detect Command+~ key combinations, including modifier key releases.
 class HotkeyManager {
     /// Reference to the CGEventTap
     private var eventTap: CFMachPort?
-    
+
     /// Run loop source for the event tap
     private var runLoopSource: CFRunLoopSource?
-    
-    /// Callback invoked when Control+Tab is pressed (key down)
+
+    /// Callback invoked when Command+~ is pressed (key down)
     var onKeyDown: (() -> Void)?
-    
-    /// Callback invoked when Control+Tab is released (key up)
+
+    /// Callback invoked when Command+~ is released (key up)
     var onKeyUp: (() -> Void)?
-    
-    /// Flag to track if Control+Tab is currently active
+
+    /// Flag to track if Command+~ is currently active
     private var isHotkeyActive = false
-    
-    /// Flag to track if Tab key is currently pressed
+
+    /// Flag to track if ~ key is currently pressed
     private var isTabPressed = false
-    
-    /// Initializes the HotkeyManager and registers the Control+Tab hotkey
+
+    /// Initializes the HotkeyManager and registers the Command+~ hotkey
     init() {
         registerHotkey()
     }
-    
-    /// Registers the Control+Tab hotkey using CGEventTap
+
+    /// Registers the Command+~ hotkey using CGEventTap
     /// Creates an event tap that monitors keyboard events globally
-    /// to detect Control+Tab key combinations and modifier releases.
+    /// to detect Command+~ key combinations and modifier releases.
     private func registerHotkey() {
         // Verify Accessibility permission before creating event tap
         // Wait a moment in case permission was just granted
@@ -86,46 +86,46 @@ class HotkeyManager {
                 // Keyboard key press/release event
                 let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
                 let flags = event.flags
-                let isControlPressed = flags.contains(.maskControl)
-                let isTabKey = (keyCode == Int64(kVK_Tab))
-                
-                if isTabKey && isControlPressed {
+                let isCommandPressed = flags.contains(.maskCommand)
+                let isTildeKey = (keyCode == 50)  // Backtick/Tilde key (~)
+
+                if isTildeKey && isCommandPressed {
                     if type == .keyDown {
                         if !hotkeyManager.isHotkeyActive {
-                            // Control+Tab was just pressed for the first time
+                            // Command+~ was just pressed for the first time
                             hotkeyManager.isHotkeyActive = true
                             hotkeyManager.isTabPressed = true
                             hotkeyManager.onKeyDown?()
                             // Consume the event to prevent it from reaching other apps
                             return nil
                         } else if hotkeyManager.isHotkeyActive {
-                            // Tab pressed again while Control is still held - cycle to next app
+                            // ~ pressed again while Command is still held - cycle to next window
                             hotkeyManager.isTabPressed = true
                             hotkeyManager.onKeyDown?()
                             // Consume the event
                             return nil
                         }
-                    } else if type == .keyUp && isTabKey {
-                        // Tab key was released
+                    } else if type == .keyUp && isTildeKey {
+                        // ~ key was released
                         hotkeyManager.isTabPressed = false
-                        // Don't activate yet - wait for Control to be released
+                        // Don't activate yet - wait for Command to be released
                         // Consume the event
                         return nil
                     }
-                } else if isTabKey && !isControlPressed && hotkeyManager.isHotkeyActive {
-                    // Tab key released and Control is no longer pressed
-                    // This means Control was released first, then Tab
+                } else if isTildeKey && !isCommandPressed && hotkeyManager.isHotkeyActive {
+                    // ~ key released and Command is no longer pressed
+                    // This means Command was released first, then ~
                     hotkeyManager.handleHotkeyRelease()
                     return nil
                 }
-                
+
             case .flagsChanged:
-                // Modifier key (Control, Shift, etc.) state changed
+                // Modifier key (Command, Shift, etc.) state changed
                 let flags = event.flags
-                let isControlPressed = flags.contains(.maskControl)
-                
-                // If Control was released while hotkey was active, activate selection
-                if !isControlPressed && hotkeyManager.isHotkeyActive {
+                let isCommandPressed = flags.contains(.maskCommand)
+
+                // If Command was released while hotkey was active, activate selection
+                if !isCommandPressed && hotkeyManager.isHotkeyActive {
                     hotkeyManager.handleHotkeyRelease()
                 }
                 
@@ -197,11 +197,11 @@ class HotkeyManager {
         // Enable the event tap
         CGEvent.tapEnable(tap: eventTap, enable: true)
         
-        print("Control+Tab hotkey registered successfully.")
+        print("Command+~ hotkey registered successfully.")
     }
     
-    /// Handles the release of the Control+Tab hotkey
-    /// Activates the selected application and resets state
+    /// Handles the release of the Command+~ hotkey
+    /// Activates the selected window and resets state
     private func handleHotkeyRelease() {
         isHotkeyActive = false
         isTabPressed = false

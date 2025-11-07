@@ -82,14 +82,23 @@ class OverlayWindow {
     /// Configures the window to be floating, semi-transparent, and non-activating
     /// - Parameter windowCount: Number of windows to display (adjusts size accordingly)
     private func createWindow(for windowCount: Int = 5) {
-        // Calculate window width based on number of windows
+        // Calculate grid dimensions
+        let cardsPerRow = 5
+        let rowCount = (windowCount + cardsPerRow - 1) / cardsPerRow  // Ceiling division
+
         // Each card is 216px wide, spacing is 25px
         let cardWidth: CGFloat = 216
-        let spacing: CGFloat = 25
+        let cardHeight: CGFloat = 220
+        let horizontalSpacing: CGFloat = 25
+        let verticalSpacing: CGFloat = 20
         let sidePadding: CGFloat = 80
+        let verticalPadding: CGFloat = 60
 
-        let windowWidth = CGFloat(windowCount) * cardWidth + CGFloat(windowCount - 1) * spacing + sidePadding
-        let windowHeight: CGFloat = 280
+        // Calculate window dimensions
+        let cardsInLastRow = windowCount % cardsPerRow == 0 ? cardsPerRow : windowCount % cardsPerRow
+        let widthForRow = CGFloat(max(cardsInLastRow, min(windowCount, cardsPerRow)))
+        let windowWidth = widthForRow * cardWidth + (widthForRow - 1) * horizontalSpacing + sidePadding
+        let windowHeight = CGFloat(rowCount) * cardHeight + CGFloat(rowCount - 1) * verticalSpacing + verticalPadding
 
         // Create window with specific style
         let windowRect = NSRect(
@@ -137,7 +146,7 @@ class OverlayWindow {
 
         window.contentView = contentView
 
-        // Create stack view for horizontal layout - well centered with proper padding
+        // Create vertical stack view to hold rows
         let stackViewRect = NSRect(
             x: 40,
             y: 30,
@@ -148,10 +157,10 @@ class OverlayWindow {
         stackView = NSStackView(frame: stackViewRect)
         guard let stackView = stackView else { return }
 
-        stackView.orientation = .horizontal
+        stackView.orientation = .vertical
         stackView.distribution = .fillEqually
-        stackView.spacing = 25
-        stackView.alignment = .centerY
+        stackView.spacing = 20  // vertical spacing between rows
+        stackView.alignment = .centerX
 
         contentView.addSubview(stackView)
     }
@@ -161,15 +170,30 @@ class OverlayWindow {
     private func updateWindowPreviews(with windows: [WindowInfo]) {
         guard let stackView = stackView else { return }
 
-        // Remove existing views
+        // Remove existing views (including old row stack views)
+        stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         windowViews.forEach { $0.removeFromSuperview() }
         windowViews.removeAll()
 
-        // Create preview view for each window
-        for window in windows {
+        // Create rows of 5 cards each
+        let cardsPerRow = 5
+        var currentRow: NSStackView?
+
+        for (index, window) in windows.enumerated() {
+            // Create new horizontal row every 5 cards
+            if index % cardsPerRow == 0 {
+                currentRow = NSStackView()
+                currentRow?.orientation = .horizontal
+                currentRow?.distribution = .fillEqually
+                currentRow?.spacing = 25  // horizontal spacing between cards
+                currentRow?.alignment = .centerY
+                stackView.addView(currentRow!, in: .top)
+            }
+
+            // Create and add window preview card to current row
             let previewView = WindowPreviewView(window: window)
             windowViews.append(previewView)
-            stackView.addView(previewView, in: .leading)
+            currentRow?.addView(previewView, in: .trailing)
         }
 
         // Update stack view layout
