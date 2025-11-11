@@ -1,4 +1,4 @@
-# MacAppSwitcher
+# MacAppSwitcher (Proper Command Tab on Mac)
 
 A modern macOS window switcher that brings Windows-style Alt+Tab functionality to Mac. Switch between individual windows (not just applications) with a beautiful, thumbnail-based interface.
 
