@@ -27,30 +27,139 @@ class OverlayWindow {
     /// Currently displayed windows
     private var currentWindows: [WindowInfo] = []
 
+    /// Thumbnail cache to avoid recapturing screenshots
+    /// Key: windowID, Value: cached thumbnail image
+    private static var thumbnailCache: [CGWindowID: NSImage] = [:]
+
+    /// Maximum cache size (number of thumbnails to keep)
+    private static let maxCacheSize = 20
+
     /// Shows the overlay window with the provided windows
-    /// - Parameter windows: Array of windows to display (up to 5)
+    /// - Parameter windows: Array of windows to display (up to 10)
     func show(with windows: [WindowInfo]) {
-        currentWindows = windows
+        // Wrap entire operation in autoreleasepool to release temporary objects
+        autoreleasepool {
+            currentWindows = windows
 
-        // Recreate window with proper size for number of windows
-        createWindow(for: windows.count)
+            // Clear cache for windows being displayed to ensure fresh captures
+            // This prevents showing stale screenshots when window content has changed
+            clearCacheForWindows(windows)
 
-        // Update the display with current windows
-        updateWindowPreviews(with: windows)
+            // Only create window if it doesn't exist yet
+            // This prevents memory leaks from creating multiple windows
+            if window == nil {
+                createWindow(for: windows.count)
+            } else {
+                // Window exists, just resize if needed
+                resizeWindow(for: windows.count)
+            }
 
-        // Reset selection to first window
-        selectedIndex = 0
-        updateHighlight()
+            // Update the display with current windows
+            updateWindowPreviews(with: windows)
 
-        // Show and center the window
-        window?.center()
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+            // Reset selection to first window
+            selectedIndex = 0
+            updateHighlight()
+
+            // Show and center the window
+            window?.center()
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
-    /// Hides the overlay window
+    /// Hides the overlay window and releases memory
     func hide() {
         window?.orderOut(nil)
+
+        // Clean up window views to release memory
+        windowViews.forEach { view in
+            view.cleanup()
+            view.removeFromSuperview()
+        }
+        windowViews.removeAll()
+        currentWindows.removeAll()
+
+        // Trim cache if it's getting too large
+        if Self.thumbnailCache.count > Self.maxCacheSize {
+            // Remove oldest entries (simple strategy: clear half the cache)
+            let sortedKeys = Array(Self.thumbnailCache.keys.prefix(Self.maxCacheSize / 2))
+            sortedKeys.forEach { Self.thumbnailCache.removeValue(forKey: $0) }
+        }
+    }
+
+    /// Clears cache entries for specific windows to force fresh captures
+    /// - Parameter windows: Windows whose cache entries should be removed
+    private func clearCacheForWindows(_ windows: [WindowInfo]) {
+        for window in windows {
+            Self.thumbnailCache.removeValue(forKey: window.windowID)
+        }
+    }
+
+    /// Gets a cached thumbnail or captures a new one
+    /// - Parameter window: The window to get thumbnail for
+    /// - Returns: Cached or newly captured thumbnail, scaled to target size
+    static func getCachedThumbnail(for window: WindowInfo) -> NSImage? {
+        // Check cache first
+        if let cached = thumbnailCache[window.windowID] {
+            return cached
+        }
+
+        // Not in cache - capture new thumbnail
+        guard let thumbnail = window.captureThumbnail() else {
+            return nil
+        }
+
+        // Scale down immediately to save memory (200x155 target size)
+        let targetSize = NSSize(width: 200, height: 155)
+        let scaled = scaleImageToFit(thumbnail, targetSize: targetSize)
+
+        // Cache the scaled version
+        thumbnailCache[window.windowID] = scaled
+
+        return scaled
+    }
+
+    /// Scales an image to fit within target size while maintaining aspect ratio
+    /// This is a static version used before WindowPreviewView creation
+    private static func scaleImageToFit(_ image: NSImage, targetSize: NSSize) -> NSImage {
+        return autoreleasepool {
+            let sourceSize = image.size
+
+            // Calculate aspect ratios
+            let sourceAspect = sourceSize.width / sourceSize.height
+            let targetAspect = targetSize.width / targetSize.height
+
+            var newSize: NSSize
+
+            if sourceAspect > targetAspect {
+                // Image is wider - fit to width
+                newSize = NSSize(
+                    width: targetSize.width,
+                    height: targetSize.width / sourceAspect
+                )
+            } else {
+                // Image is taller - fit to height
+                newSize = NSSize(
+                    width: targetSize.height * sourceAspect,
+                    height: targetSize.height
+                )
+            }
+
+            // Create new image with proper size
+            let newImage = NSImage(size: newSize)
+            newImage.lockFocus()
+
+            image.draw(
+                in: NSRect(origin: .zero, size: newSize),
+                from: NSRect(origin: .zero, size: sourceSize),
+                operation: .copy,
+                fraction: 1.0
+            )
+
+            newImage.unlockFocus()
+            return newImage
+        }
     }
 
     /// Cycles to the next window in the list
@@ -95,9 +204,10 @@ class OverlayWindow {
         let verticalPadding: CGFloat = 60
 
         // Calculate window dimensions
-        let cardsInLastRow = windowCount % cardsPerRow == 0 ? cardsPerRow : windowCount % cardsPerRow
-        let widthForRow = CGFloat(max(cardsInLastRow, min(windowCount, cardsPerRow)))
-        let windowWidth = widthForRow * cardWidth + (widthForRow - 1) * horizontalSpacing + sidePadding
+        // For multi-row layouts, always use full row width (5 cards)
+        // For single row, use actual window count
+        let cardsPerRowToDisplay = min(windowCount, cardsPerRow)
+        let windowWidth = CGFloat(cardsPerRowToDisplay) * cardWidth + CGFloat(cardsPerRowToDisplay - 1) * horizontalSpacing + sidePadding
         let windowHeight = CGFloat(rowCount) * cardHeight + CGFloat(rowCount - 1) * verticalSpacing + verticalPadding
 
         // Create window with specific style
@@ -118,7 +228,7 @@ class OverlayWindow {
         guard let window = window else { return }
 
         // Configure window properties with backdrop blur
-        window.backgroundColor = NSColor.black.withAlphaComponent(0.75)
+        window.backgroundColor = .clear  // Clear background to allow rounded corners to show properly
         window.isOpaque = false
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -165,14 +275,60 @@ class OverlayWindow {
         contentView.addSubview(stackView)
     }
 
+    /// Resizes the existing window for a different number of windows
+    /// - Parameter windowCount: Number of windows to display
+    private func resizeWindow(for windowCount: Int) {
+        guard let window = window,
+              let stackView = stackView,
+              let contentView = window.contentView else { return }
+
+        // Calculate grid dimensions
+        let cardsPerRow = 5
+        let rowCount = (windowCount + cardsPerRow - 1) / cardsPerRow
+
+        // Dimensions
+        let cardWidth: CGFloat = 216
+        let cardHeight: CGFloat = 220
+        let horizontalSpacing: CGFloat = 25
+        let verticalSpacing: CGFloat = 20
+        let sidePadding: CGFloat = 80
+        let verticalPadding: CGFloat = 60
+
+        // Calculate window dimensions
+        // For multi-row layouts, always use full row width (5 cards)
+        // For single row, use actual window count
+        let cardsPerRowToDisplay = min(windowCount, cardsPerRow)
+        let windowWidth = CGFloat(cardsPerRowToDisplay) * cardWidth + CGFloat(cardsPerRowToDisplay - 1) * horizontalSpacing + sidePadding
+        let windowHeight = CGFloat(rowCount) * cardHeight + CGFloat(rowCount - 1) * verticalSpacing + verticalPadding
+
+        // Update window frame
+        let windowRect = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
+        window.setFrame(windowRect, display: false)
+
+        // Update content view and blur view frames
+        contentView.frame = windowRect
+        if let blurView = contentView.subviews.first(where: { $0 is NSVisualEffectView }) {
+            blurView.frame = windowRect
+        }
+
+        // Update stack view frame
+        let stackViewRect = NSRect(x: 40, y: 30, width: windowWidth - 80, height: windowHeight - 60)
+        stackView.frame = stackViewRect
+    }
+
     /// Updates the preview views with window thumbnails
     /// - Parameter windows: Array of windows to display
     private func updateWindowPreviews(with windows: [WindowInfo]) {
         guard let stackView = stackView else { return }
 
-        // Remove existing views (including old row stack views)
-        stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        windowViews.forEach { $0.removeFromSuperview() }
+        // Clean up old views first to release memory
+        autoreleasepool {
+            windowViews.forEach { view in
+                view.cleanup()
+                view.removeFromSuperview()
+            }
+            stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        }
         windowViews.removeAll()
 
         // Create rows of 5 cards each
@@ -262,12 +418,10 @@ class WindowPreviewView: NSView {
         thumbnailImageView?.layer?.borderWidth = 1
         thumbnailImageView?.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.4).cgColor
 
-        // Capture thumbnail and resize it properly
-        if let thumbnail = windowInfo.captureThumbnail() {
-            // Create a properly sized version that fits the thumbnail area
-            let targetSize = NSSize(width: 200, height: 155)
-            let resizedImage = resizeImageToFit(thumbnail, targetSize: targetSize)
-            thumbnailImageView?.image = resizedImage
+        // Get cached thumbnail (or capture new one if not cached)
+        // This dramatically reduces memory usage by avoiding repeated captures
+        if let cachedThumbnail = OverlayWindow.getCachedThumbnail(for: windowInfo) {
+            thumbnailImageView?.image = cachedThumbnail
         } else {
             // Fallback: show app icon if thumbnail fails
             thumbnailImageView?.image = windowInfo.app.icon
@@ -335,42 +489,63 @@ class WindowPreviewView: NSView {
         return NSSize(width: 216, height: 220)  // 35% larger
     }
 
+    /// Cleanup method to release image memory
+    func cleanup() {
+        // Clear images to release memory
+        thumbnailImageView?.image = nil
+        iconImageView?.image = nil
+
+        // Remove all subviews
+        thumbnailImageView?.removeFromSuperview()
+        iconImageView?.removeFromSuperview()
+        titleLabel?.removeFromSuperview()
+        selectionBorder?.removeFromSuperview()
+
+        thumbnailImageView = nil
+        iconImageView = nil
+        titleLabel = nil
+        selectionBorder = nil
+    }
+
     /// Resizes an image to fit within target size while maintaining aspect ratio
+    /// Uses autoreleasepool to ensure original large image is released immediately
     private func resizeImageToFit(_ image: NSImage, targetSize: NSSize) -> NSImage {
-        let sourceSize = image.size
+        return autoreleasepool {
+            let sourceSize = image.size
 
-        // Calculate aspect ratios
-        let sourceAspect = sourceSize.width / sourceSize.height
-        let targetAspect = targetSize.width / targetSize.height
+            // Calculate aspect ratios
+            let sourceAspect = sourceSize.width / sourceSize.height
+            let targetAspect = targetSize.width / targetSize.height
 
-        var newSize: NSSize
+            var newSize: NSSize
 
-        if sourceAspect > targetAspect {
-            // Image is wider - fit to width
-            newSize = NSSize(
-                width: targetSize.width,
-                height: targetSize.width / sourceAspect
+            if sourceAspect > targetAspect {
+                // Image is wider - fit to width
+                newSize = NSSize(
+                    width: targetSize.width,
+                    height: targetSize.width / sourceAspect
+                )
+            } else {
+                // Image is taller - fit to height
+                newSize = NSSize(
+                    width: targetSize.height * sourceAspect,
+                    height: targetSize.height
+                )
+            }
+
+            // Create new image with proper size
+            let newImage = NSImage(size: newSize)
+            newImage.lockFocus()
+
+            image.draw(
+                in: NSRect(origin: .zero, size: newSize),
+                from: NSRect(origin: .zero, size: sourceSize),
+                operation: .copy,
+                fraction: 1.0
             )
-        } else {
-            // Image is taller - fit to height
-            newSize = NSSize(
-                width: targetSize.height * sourceAspect,
-                height: targetSize.height
-            )
+
+            newImage.unlockFocus()
+            return newImage
         }
-
-        // Create new image with proper size
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-
-        image.draw(
-            in: NSRect(origin: .zero, size: newSize),
-            from: NSRect(origin: .zero, size: sourceSize),
-            operation: .copy,
-            fraction: 1.0
-        )
-
-        newImage.unlockFocus()
-        return newImage
     }
 }
