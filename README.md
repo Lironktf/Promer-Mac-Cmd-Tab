@@ -193,15 +193,3 @@ Potential improvements for future versions:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-[Add your license here - e.g., MIT, Apache 2.0, etc.]
-
-## Acknowledgments
-
-Inspired by Windows Alt+Tab functionality and various macOS window management tools.
-
----
-
-**Made with ❤️ for macOS power users**
